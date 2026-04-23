@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finanças Familiar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       ECRÃ DE LOGIN — mostrado antes do Google Auth
+  ════════════════════════════════════════════ -->
+  <div id="screen-login" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-logo">💰</div>
+      <h1 class="auth-title">Finanças Familiar</h1>
+      <p class="auth-subtitle">Gestão financeira do casal, partilhada em tempo real</p>
+      <button id="btn-google-login" class="btn-google">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+        Entrar com Google
+      </button>
+      <p class="auth-note">Os seus dados ficam guardados no seu Google Sheets pessoal. Nenhuma informação é partilhada com terceiros.</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       ECRÃ DE CONFIGURAÇÃO — primeira vez
+  ════════════════════════════════════════════ -->
+  <div id="screen-setup" class="auth-screen hidden">
+    <div class="auth-card wide">
+      <div class="auth-logo">🛠️</div>
+      <h1 class="auth-title">Configuração inicial</h1>
+      <p class="auth-subtitle">Vamos criar a vossa folha partilhada no Google Sheets</p>
+
+      <div class="setup-steps">
+        <div class="setup-field">
+          <label>O seu nome (como aparece na app)</label>
+          <input type="text" id="setup-user-name" placeholder="ex: João" />
+        </div>
+        <div class="setup-field">
+          <label>Nome do/a parceiro/a</label>
+          <input type="text" id="setup-partner-name" placeholder="ex: Maria" />
+        </div>
+        <div class="setup-field">
+          <label>Nome da folha Google Sheets a criar</label>
+          <input type="text" id="setup-sheet-name" value="Finanças Familiar" />
+        </div>
+      </div>
+
+      <button id="btn-create-sheet" class="btn-primary">Criar folha e começar →</button>
+      <p class="auth-note">Ou, se já tem uma folha criada: <a href="#" id="btn-use-existing">usar folha existente</a></p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       APP PRINCIPAL — após login
+  ════════════════════════════════════════════ -->
+  <div id="app" class="hidden">
+
+    <!-- SIDEBAR -->
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-icon">💰</span>
+        <div>
+          <div class="sidebar-title">Finanças Familiar</div>
+          <div class="sidebar-user" id="sidebar-user-name">A carregar...</div>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Principal</div>
+        <button class="nav-item active" data-page="dashboard">
+          <span class="nav-icon">📊</span> Dashboard
+        </button>
+        <button class="nav-item" data-page="transactions">
+          <span class="nav-icon">💳</span> Transações
+        </button>
+        <button class="nav-item" data-page="subscriptions">
+          <span class="nav-icon">🔄</span> Subscrições
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Planeamento</div>
+        <button class="nav-item" data-page="planning">
+          <span class="nav-icon">🎯</span> Objetivos
+        </button>
+        <button class="nav-item" data-page="reports">
+          <span class="nav-icon">📈</span> Relatórios
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Conta</div>
+        <button class="nav-item" data-page="settings">
+          <span class="nav-icon">⚙️</span> Definições
+        </button>
+        <button class="nav-item" id="btn-logout">
+          <span class="nav-icon">🚪</span> Sair
+        </button>
+      </div>
+
+      <!-- Selector de mês na sidebar -->
+      <div class="month-nav">
+        <button id="btn-prev-month">‹</button>
+        <span id="current-month-label">Mai 2025</span>
+        <button id="btn-next-month">›</button>
+      </div>
+    </nav>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="main-content">
+
+      <!-- ── PÁGINA: DASHBOARD ── -->
+      <div id="page-dashboard" class="page active">
+        <div class="page-header">
+          <div>
+            <h2 class="page-title">Dashboard</h2>
+            <p class="page-subtitle" id="dashboard-subtitle">Resumo do mês</p>
+          </div>
+          <div class="header-actions">
+            <div class="owner-tabs">
+              <button class="owner-tab active" data-owner="all">Casal</button>
+              <button class="owner-tab" data-owner="me" id="tab-me">Eu</button>
+              <button class="owner-tab" data-owner="partner" id="tab-partner">Parceiro/a</button>
+            </div>
+            <button class="btn-primary small" id="btn-add-transaction">+ Transação</button>
+          </div>
+        </div>
+
+        <!-- Cartões de resumo -->
+        <div class="summary-grid">
+          <div class="summary-card income">
+            <div class="summary-label">Rendimento</div>
+            <div class="summary-value" id="summary-income">€0</div>
+            <div class="summary-sub" id="summary-income-sub">0 entradas</div>
+          </div>
+          <div class="summary-card expenses">
+            <div class="summary-label">Despesas</div>
+            <div class="summary-value" id="summary-expenses">€0</div>
+            <div class="summary-sub" id="summary-expenses-sub">0 saídas</div>
+          </div>
+          <div class="summary-card savings">
+            <div class="summary-label">Poupado</div>
+            <div class="summary-value" id="summary-savings">€0</div>
+            <div class="summary-sub" id="summary-savings-rate">0% do rendimento</div>
+          </div>
+          <div class="summary-card subscriptions">
+            <div class="summary-label">Subscrições</div>
+            <div class="summary-value" id="summary-subs">€0</div>
+            <div class="summary-sub" id="summary-subs-count">0 serviços ativos</div>
+          </div>
+        </div>
+
+        <!-- Gráficos -->
+        <div class="charts-grid">
+          <div class="card">
+            <div class="card-title">Despesas por categoria</div>
+            <div class="chart-wrap donut-wrap">
+              <canvas id="chart-categories"></canvas>
+              <div class="donut-center" id="donut-center-text"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Entradas vs Saídas — últimos 6 meses</div>
+            <div class="chart-wrap">
+              <canvas id="chart-monthly"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Últimas transações -->
+        <div class="card mt-16">
+          <div class="card-title">Últimas transações
+            <span class="card-action" data-page="transactions">ver todas →</span>
+          </div>
+          <div id="recent-transactions-list" class="transactions-list"></div>
+        </div>
+
+        <!-- Alerta de subscrições -->
+        <div class="card mt-16" id="subs-alert-card">
+          <div class="card-title">⚠️ Subscrições este mês
+            <span class="card-action" data-page="subscriptions">gerir →</span>
+          </div>
+          <div id="subs-alert-list"></div>
+        </div>
+      </div>
+
+      <!-- ── PÁGINA: TRANSAÇÕES ── -->
+      <div id="page-transactions" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h2 class="page-title">Transações</h2>
+            <p class="page-subtitle">Registo completo de movimentos</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn-secondary" id="btn-import-csv">📂 Importar CSV</button>
+            <button class="btn-primary small" id="btn-add-transaction-2">+ Transação</button>
+          </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="filters-bar">
+          <div class="filter-group">
+            <label>Categoria</label>
+            <select id="filter-category">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Quem pagou</label>
+            <select id="filter-owner">
+              <option value="">Todos</option>
+              <option value="joint">Conjunto</option>
+              <option value="me">Eu</option>
+              <option value="partner">Parceiro/a</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Tipo</label>
+            <select id="filter-type">
+              <option value="">Todos</option>
+              <option value="expense">Despesa</option>
+              <option value="income">Rendimento</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Pesquisar</label>
+            <input type="text" id="filter-search" placeholder="Descrição..." />
+          </div>
+        </div>
+
+        <div class="card">
+          <div id="transactions-list" class="transactions-list"></div>
+          <div id="transactions-empty" class="empty-state hidden">
+            <p>Nenhuma transação encontrada.</p>
+            <button class="btn-primary small mt-8" id="btn-add-first">Adicionar primeira transação</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PÁGINA: SUBSCRIÇÕES ── -->
+      <div id="page-subscriptions" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h2 class="page-title">Subscrições & Serviços</h2>
+            <p class="page-subtitle">Serviços com cobrança automática recorrente</p>
+          </div>
+          <button class="btn-primary small" id="btn-add-sub">+ Subscrição</button>
+        </div>
+
+        <!-- Totais de subscrições -->
+        <div class="subs-totals">
+          <div class="sub-total-card">
+            <div class="sub-total-label">Total mensal</div>
+            <div class="sub-total-value" id="subs-monthly-total">€0</div>
+          </div>
+          <div class="sub-total-card highlight">
+            <div class="sub-total-label">Total anual</div>
+            <div class="sub-total-value" id="subs-annual-total">€0</div>
+            <div class="sub-total-note">O que paga por ano em subscrições</div>
+          </div>
+          <div class="sub-total-card">
+            <div class="sub-total-label">Serviços ativos</div>
+            <div class="sub-total-value" id="subs-count">0</div>
+          </div>
+        </div>
+
+        <div id="subscriptions-grid" class="subscriptions-grid"></div>
+      </div>
+
+      <!-- ── PÁGINA: OBJETIVOS / PLANEAMENTO ── -->
+      <div id="page-planning" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h2 class="page-title">Objetivos & Investimentos</h2>
+            <p class="page-subtitle">Planeamento para o futuro e para os filhos</p>
+          </div>
+          <button class="btn-primary small" id="btn-add-goal">+ Objetivo</button>
+        </div>
+
+        <!-- Calculadora de investimento -->
+        <div class="card mb-16">
+          <div class="card-title">🧮 Calculadora de crescimento</div>
+          <p class="card-desc">Veja como cresce o seu investimento ao longo do tempo com juros compostos.</p>
+          <div class="calc-grid">
+            <div class="calc-field">
+              <label>Capital inicial (€)</label>
+              <input type="number" id="calc-initial" value="5000" min="0" />
+            </div>
+            <div class="calc-field">
+              <label>Contribuição mensal (€)</label>
+              <input type="number" id="calc-monthly" value="200" min="0" />
+            </div>
+            <div class="calc-field">
+              <label>Rentabilidade anual (%)</label>
+              <input type="number" id="calc-rate" value="7" min="0" max="100" step="0.5" />
+            </div>
+            <div class="calc-field">
+              <label>Horizonte (anos)</label>
+              <input type="number" id="calc-years" value="18" min="1" max="50" />
+            </div>
+          </div>
+          <button class="btn-primary small" id="btn-calculate">Calcular</button>
+          <div id="calc-result" class="calc-result hidden">
+            <div class="calc-result-grid">
+              <div class="calc-result-item">
+                <div class="calc-result-label">Valor final estimado</div>
+                <div class="calc-result-value green" id="calc-final-value">€0</div>
+              </div>
+              <div class="calc-result-item">
+                <div class="calc-result-label">Total investido</div>
+                <div class="calc-result-value" id="calc-invested">€0</div>
+              </div>
+              <div class="calc-result-item">
+                <div class="calc-result-label">Ganho com juros</div>
+                <div class="calc-result-value gold" id="calc-gain">€0</div>
+              </div>
+            </div>
+            <div class="chart-wrap mt-16">
+              <canvas id="chart-investment"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lista de objetivos -->
+        <div id="goals-list" class="goals-list"></div>
+        <div id="goals-empty" class="empty-state hidden">
+          <p>Ainda não tem objetivos definidos.</p>
+          <button class="btn-primary small mt-8" id="btn-add-first-goal">Criar primeiro objetivo</button>
+        </div>
+      </div>
+
+      <!-- ── PÁGINA: RELATÓRIOS ── -->
+      <div id="page-reports" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h2 class="page-title">Relatórios Anuais</h2>
+            <p class="page-subtitle" id="reports-year-label">Ano de 2025</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn-secondary" id="btn-prev-year">‹ Ano anterior</button>
+            <button class="btn-secondary" id="btn-next-year">Ano seguinte ›</button>
+          </div>
+        </div>
+
+        <!-- Totais anuais -->
+        <div class="summary-grid mb-16">
+          <div class="summary-card income">
+            <div class="summary-label">Rendimento anual</div>
+            <div class="summary-value" id="annual-income">€0</div>
+          </div>
+          <div class="summary-card expenses">
+            <div class="summary-label">Despesas anuais</div>
+            <div class="summary-value" id="annual-expenses">€0</div>
+          </div>
+          <div class="summary-card savings">
+            <div class="summary-label">Poupado no ano</div>
+            <div class="summary-value" id="annual-savings">€0</div>
+          </div>
+          <div class="summary-card subscriptions">
+            <div class="summary-label">Em subscrições</div>
+            <div class="summary-value" id="annual-subs">€0</div>
+          </div>
+        </div>
+
+        <div class="charts-grid mb-16">
+          <div class="card">
+            <div class="card-title">Despesas mensais por categoria</div>
+            <div class="chart-wrap">
+              <canvas id="chart-annual-categories"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Poupança mensal</div>
+            <div class="chart-wrap">
+              <canvas id="chart-annual-savings"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PÁGINA: DEFINIÇÕES ── -->
+      <div id="page-settings" class="page hidden">
+        <div class="page-header">
+          <h2 class="page-title">Definições</h2>
+        </div>
+        <div class="settings-grid">
+          <div class="card">
+            <div class="card-title">👤 Perfil</div>
+            <div class="settings-field">
+              <label>O seu nome</label>
+              <input type="text" id="settings-my-name" />
+            </div>
+            <div class="settings-field">
+              <label>Nome do/a parceiro/a</label>
+              <input type="text" id="settings-partner-name" />
+            </div>
+            <button class="btn-primary small mt-8" id="btn-save-profile">Guardar</button>
+          </div>
+          <div class="card">
+            <div class="card-title">📋 Google Sheets</div>
+            <p class="card-desc">ID da folha ligada:</p>
+            <div class="sheet-id-box" id="settings-sheet-id">–</div>
+            <a id="settings-sheet-link" href="#" target="_blank" class="btn-secondary mt-8 inline-block">Abrir folha no Google Sheets ↗</a>
+          </div>
+          <div class="card">
+            <div class="card-title">🔄 Dados</div>
+            <p class="card-desc mb-8">Sincronizar dados com o Google Sheets agora.</p>
+            <button class="btn-secondary" id="btn-sync">↻ Sincronizar</button>
+            <p class="card-desc mt-12 mb-8">Exportar todos os dados em CSV.</p>
+            <button class="btn-secondary" id="btn-export-csv">⬇ Exportar CSV</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL: NOVA TRANSAÇÃO
+  ════════════════════════════════════════════ -->
+  <div id="modal-transaction" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-transaction-title">Nova Transação</h3>
+        <button class="modal-close" data-modal="modal-transaction">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-field">
+            <label>Tipo</label>
+            <div class="type-toggle">
+              <button class="type-btn active" data-type="expense">Despesa</button>
+              <button class="type-btn" data-type="income">Rendimento</button>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>Quem</label>
+            <div class="type-toggle">
+              <button class="owner-btn active" data-owner="joint">Conjunto</button>
+              <button class="owner-btn" data-owner="me" id="owner-me-btn">Eu</button>
+              <button class="owner-btn" data-owner="partner" id="owner-partner-btn">Parceiro/a</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Descrição</label>
+            <input type="text" id="tx-description" placeholder="ex: Supermercado Pingo Doce" />
+          </div>
+          <div class="form-field small">
+            <label>Valor (€)</label>
+            <input type="number" id="tx-amount" placeholder="0.00" min="0" step="0.01" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Categoria</label>
+            <select id="tx-category"></select>
+          </div>
+          <div class="form-field">
+            <label>Subcategoria</label>
+            <select id="tx-subcategory"></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Data</label>
+            <input type="date" id="tx-date" />
+          </div>
+          <div class="form-field">
+            <label>É subscrição recorrente?</label>
+            <div class="type-toggle">
+              <button class="recur-btn active" data-recur="false">Não</button>
+              <button class="recur-btn" data-recur="true">Sim</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Notas (opcional)</label>
+          <input type="text" id="tx-notes" placeholder="Notas adicionais..." />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-modal="modal-transaction">Cancelar</button>
+        <button class="btn-primary" id="btn-save-transaction">Guardar transação</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL: NOVA SUBSCRIÇÃO
+  ════════════════════════════════════════════ -->
+  <div id="modal-subscription" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Nova Subscrição</h3>
+        <button class="modal-close" data-modal="modal-subscription">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-field">
+            <label>Serviço</label>
+            <input type="text" id="sub-name" placeholder="ex: Netflix" />
+          </div>
+          <div class="form-field small">
+            <label>Valor mensal (€)</label>
+            <input type="number" id="sub-amount" placeholder="0.00" min="0" step="0.01" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Categoria</label>
+            <select id="sub-category">
+              <option value="streaming">Streaming</option>
+              <option value="music">Música</option>
+              <option value="cloud">Armazenamento Cloud</option>
+              <option value="software">Software</option>
+              <option value="gym">Ginásio / Desporto</option>
+              <option value="news">Jornais / Revistas</option>
+              <option value="telecom">Telecomunicações</option>
+              <option value="other">Outro</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Quem paga</label>
+            <select id="sub-owner">
+              <option value="joint">Conjunto</option>
+              <option value="me">Eu</option>
+              <option value="partner">Parceiro/a</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Dia do mês em que é cobrado</label>
+          <input type="number" id="sub-day" placeholder="ex: 15" min="1" max="31" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-modal="modal-subscription">Cancelar</button>
+        <button class="btn-primary" id="btn-save-sub">Guardar subscrição</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL: NOVO OBJETIVO
+  ════════════════════════════════════════════ -->
+  <div id="modal-goal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Novo Objetivo</h3>
+        <button class="modal-close" data-modal="modal-goal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-field">
+            <label>Nome do objetivo</label>
+            <input type="text" id="goal-name" placeholder="ex: Fundo educação João" />
+          </div>
+          <div class="form-field small">
+            <label>Emoji</label>
+            <input type="text" id="goal-emoji" placeholder="🎓" maxlength="2" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Valor alvo (€)</label>
+            <input type="number" id="goal-target" placeholder="ex: 50000" min="0" />
+          </div>
+          <div class="form-field">
+            <label>Valor já poupado (€)</label>
+            <input type="number" id="goal-saved" placeholder="0" min="0" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Contribuição mensal (€)</label>
+            <input type="number" id="goal-monthly" placeholder="ex: 200" min="0" />
+          </div>
+          <div class="form-field">
+            <label>Prazo (ano)</label>
+            <input type="number" id="goal-year" placeholder="ex: 2040" min="2024" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Tipo</label>
+          <select id="goal-type">
+            <option value="children">Filhos</option>
+            <option value="emergency">Fundo de emergência</option>
+            <option value="retirement">Reforma / PPR</option>
+            <option value="house">Casa</option>
+            <option value="travel">Viagem</option>
+            <option value="other">Outro</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-modal="modal-goal">Cancelar</button>
+        <button class="btn-primary" id="btn-save-goal">Guardar objetivo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       MODAL: IMPORTAR CSV
+  ════════════════════════════════════════════ -->
+  <div id="modal-csv" class="modal-overlay hidden">
+    <div class="modal wide">
+      <div class="modal-header">
+        <h3>Importar extrato do banco (CSV)</h3>
+        <button class="modal-close" data-modal="modal-csv">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="card-desc mb-12">Exporte o extrato no seu banco online em formato CSV ou Excel e arraste aqui o ficheiro. A app vai tentar categorizar automaticamente cada transação.</p>
+        <div class="csv-drop-zone" id="csv-drop-zone">
+          <div class="csv-drop-icon">📂</div>
+          <p>Arraste o ficheiro CSV aqui, ou clique para selecionar</p>
+          <input type="file" id="csv-file-input" accept=".csv,.xlsx,.xls" class="hidden" />
+        </div>
+        <div id="csv-preview" class="hidden">
+          <div class="csv-mapping mb-12">
+            <p class="card-desc mb-8">Mapeamento de colunas (indique qual coluna do CSV corresponde a cada campo):</p>
+            <div class="form-row">
+              <div class="form-field"><label>Coluna da data</label><select id="csv-col-date"></select></div>
+              <div class="form-field"><label>Coluna da descrição</label><select id="csv-col-desc"></select></div>
+              <div class="form-field"><label>Coluna do valor</label><select id="csv-col-amount"></select></div>
+            </div>
+          </div>
+          <div id="csv-rows-preview" class="transactions-list"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-modal="modal-csv">Cancelar</button>
+        <button class="btn-primary hidden" id="btn-import-confirm">Importar selecionadas</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast de notificação -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="sheets.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
