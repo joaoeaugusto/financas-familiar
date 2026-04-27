@@ -804,9 +804,264 @@ function renderReports() {
 document.getElementById('btn-prev-year').addEventListener('click', () => { State.reportYear--; renderReports(); });
 document.getElementById('btn-next-year').addEventListener('click', () => { State.reportYear++; renderReports(); });
 
-// ─── IMPORTAÇÃO DE CSV ────────────────────────────────────────────────────────
+// ─── SISTEMA DE REGRAS DE APRENDIZAGEM ───────────────────────────────────────
+// Quando o utilizador corrige uma categoria durante a importação,
+// a regra é guardada em localStorage. Da próxima vez, aplica-se automaticamente.
+// Estrutura: { "pingo doce": "alimentacao", "netflix": "subscricoes", ... }
 
-let csvParsedRows = [];
+const LEARNED_RULES_KEY = 'gf_learned_rules';
+
+function getLearnedRules() {
+  try { return JSON.parse(localStorage.getItem(LEARNED_RULES_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function saveLearnedRule(description, category) {
+  const rules = getLearnedRules();
+  // Guardamos a palavra-chave principal (primeiras 3 palavras) para evitar falsos positivos
+  const key = description.toLowerCase().trim().split(/\s+/).slice(0, 3).join(' ');
+  if (key.length > 2) {
+    rules[key] = category;
+    localStorage.setItem(LEARNED_RULES_KEY, JSON.stringify(rules));
+  }
+}
+
+/**
+ * Categoriza uma descrição usando 3 níveis de prioridade:
+ * 1. Regras aprendidas pelo utilizador (máxima prioridade)
+ * 2. Keywords predefinidas por categoria
+ * 3. Fallback: 'lazer'
+ */
+function guessCategory(description) {
+  const desc = description.toLowerCase().trim();
+
+  // Nível 1: Regras aprendidas
+  const learned = getLearnedRules();
+  for (const [key, cat] of Object.entries(learned)) {
+    if (desc.includes(key)) return cat;
+  }
+
+  // Nível 2: Keywords predefinidas
+  for (const [key, cat] of Object.entries(CATEGORIES)) {
+    if (cat.keywords?.some(kw => desc.includes(kw))) return key;
+  }
+
+  return 'lazer';
+}
+
+// ─── PARSERS POR BANCO ────────────────────────────────────────────────────────
+// Cada parser recebe o texto bruto do CSV e devolve um array normalizado de:
+// { data, descricao, valor, tipo }
+// A função detectBank identifica automaticamente qual parser usar.
+
+const BankParsers = {
+
+  /**
+   * REVOLUT — Personal CSV
+   * Colunas: Type, Product, Started Date, Completed Date, Description, Amount, Fee, Currency, State, Balance
+   */
+  revolut: {
+    detect: (headers) => headers.some(h => h.toLowerCase().includes('started date')) &&
+                         headers.some(h => h.toLowerCase() === 'state'),
+    parse: (headers, rows) => {
+      const iDesc    = headers.findIndex(h => h.toLowerCase() === 'description');
+      const iAmount  = headers.findIndex(h => h.toLowerCase() === 'amount');
+      const iDate    = headers.findIndex(h => h.toLowerCase().includes('completed date'));
+      const iState   = headers.findIndex(h => h.toLowerCase() === 'state');
+      const iType    = headers.findIndex(h => h.toLowerCase() === 'type');
+
+      return rows
+        .filter(r => r[iState]?.toLowerCase() === 'completed') // só movimentos concluídos
+        .filter(r => r[iType]?.toLowerCase() !== 'topup' || true) // incluímos tudo exceto...
+        .map(r => {
+          const raw = parseFloat(r[iAmount]?.replace(',', '.')) || 0;
+          // Ignorar transferências internas entre contas Revolut
+          if (r[iType]?.toLowerCase() === 'transfer' && r[iDesc]?.toLowerCase().includes('to eur')) return null;
+          return {
+            data:     parseDate(r[iDate]),
+            descricao: r[iDesc] || 'Revolut',
+            valor:    Math.abs(raw).toFixed(2),
+            tipo:     raw >= 0 ? 'income' : 'expense',
+          };
+        })
+        .filter(Boolean);
+    },
+  },
+
+  /**
+   * TRADING 212 — Invest/ISA CSV
+   * Colunas: Action, Time, ISIN, Ticker, Name, No. of shares, Price/share, Currency, Exchange rate, Total, ...
+   * Aqui só importamos depósitos/levantamentos e dividendos — as compras de ações
+   * vão para Finanças Pessoais automaticamente.
+   */
+  trading212: {
+    detect: (headers) => headers.some(h => h.toLowerCase().includes('ticker')) &&
+                         headers.some(h => h.toLowerCase() === 'action'),
+    parse: (headers, rows) => {
+      const iAction = headers.findIndex(h => h.toLowerCase() === 'action');
+      const iTime   = headers.findIndex(h => h.toLowerCase() === 'time');
+      const iName   = headers.findIndex(h => h.toLowerCase() === 'name');
+      const iTotal  = headers.findIndex(h => h.toLowerCase().includes('total'));
+
+      return rows.map(r => {
+        const action = r[iAction]?.toLowerCase() || '';
+        const total  = parseFloat(r[iTotal]?.replace(',','.')) || 0;
+        if (total === 0) return null;
+
+        let descricao = r[iName] || action;
+        let tipo = 'expense';
+
+        if (action.includes('deposit'))         { descricao = 'Depósito Trading 212'; tipo = 'income'; }
+        else if (action.includes('withdrawal')) { descricao = 'Levantamento Trading 212'; tipo = 'expense'; }
+        else if (action.includes('dividend'))   { descricao = `Dividendo: ${r[iName]}`; tipo = 'income'; }
+        else if (action.includes('buy'))        { descricao = `Compra: ${r[iName]}`; tipo = 'expense'; }
+        else if (action.includes('sell'))       { descricao = `Venda: ${r[iName]}`; tipo = 'income'; }
+        else return null; // ignora linhas desconhecidas
+
+        return {
+          data:     parseDate(r[iTime]),
+          descricao,
+          valor:    Math.abs(total).toFixed(2),
+          tipo,
+          _forceCat: action.includes('dividend') || action.includes('buy') || action.includes('sell')
+                      ? 'financas' : null,
+        };
+      }).filter(Boolean);
+    },
+  },
+
+  /**
+   * BANCO CTT — CSV do homebanking
+   * Colunas típicas: Data Mov., Data Valor, Descrição, Débito, Crédito, Saldo
+   */
+  bancoCTT: {
+    detect: (headers) => headers.some(h => h.toLowerCase().includes('débito') || h.toLowerCase().includes('debito')) &&
+                         headers.some(h => h.toLowerCase().includes('crédito') || h.toLowerCase().includes('credito')),
+    parse: (headers, rows) => {
+      const iDate   = headers.findIndex(h => h.toLowerCase().includes('data mov') || h.toLowerCase() === 'data');
+      const iDesc   = headers.findIndex(h => h.toLowerCase().includes('descri'));
+      const iDebit  = headers.findIndex(h => h.toLowerCase().includes('débito') || h.toLowerCase().includes('debito'));
+      const iCredit = headers.findIndex(h => h.toLowerCase().includes('crédito') || h.toLowerCase().includes('credito'));
+
+      return rows.map(r => {
+        const debit  = parseFloat(r[iDebit]?.replace('.','').replace(',','.')) || 0;
+        const credit = parseFloat(r[iCredit]?.replace('.','').replace(',','.')) || 0;
+        if (debit === 0 && credit === 0) return null;
+
+        return {
+          data:     parseDate(r[iDate]),
+          descricao: r[iDesc] || 'Banco CTT',
+          valor:    (debit > 0 ? debit : credit).toFixed(2),
+          tipo:     debit > 0 ? 'expense' : 'income',
+        };
+      }).filter(Boolean);
+    },
+  },
+
+  /**
+   * ACTIVO BANK — formato genérico português (Data;Descrição;Valor;Saldo)
+   * Nota: o Activo Bank não exporta CSV nativamente, mas se conseguir
+   * copiar os movimentos para um CSV simples, este parser trata-os.
+   */
+  activoBank: {
+    detect: (headers) => headers.some(h => h.toLowerCase().includes('activo') ||
+                          (headers.length <= 4 && headers.some(h => h.toLowerCase() === 'valor'))),
+    parse: (headers, rows) => {
+      const iDate  = headers.findIndex(h => h.toLowerCase().includes('data'));
+      const iDesc  = headers.findIndex(h => h.toLowerCase().includes('descri') || h.toLowerCase().includes('movimento'));
+      const iValue = headers.findIndex(h => h.toLowerCase() === 'valor' || h.toLowerCase().includes('montante'));
+
+      return rows.map(r => {
+        const raw = parseFloat(r[iValue]?.replace('.','').replace(',','.')) || 0;
+        if (raw === 0) return null;
+        return {
+          data:     parseDate(r[iDate]),
+          descricao: r[iDesc] || 'Activo Bank',
+          valor:    Math.abs(raw).toFixed(2),
+          tipo:     raw < 0 ? 'expense' : 'income',
+        };
+      }).filter(Boolean);
+    },
+  },
+
+  /**
+   * GENÉRICO — fallback para qualquer CSV não reconhecido
+   * Tenta detetar as colunas mais prováveis por nome.
+   */
+  generic: {
+    detect: () => true, // sempre como último recurso
+    parse: (headers, rows) => {
+      // Tentamos encontrar colunas por nome aproximado
+      const iDate  = headers.findIndex(h => /data|date|quando/i.test(h));
+      const iDesc  = headers.findIndex(h => /desc|descri|movim|histor|referencia|detail/i.test(h));
+      const iAmt   = headers.findIndex(h => /valor|amount|montant|total|importe/i.test(h));
+      const iDebit = headers.findIndex(h => /débit|debit|saída|saida/i.test(h));
+      const iCredit= headers.findIndex(h => /crédit|credit|entrada/i.test(h));
+
+      if (iDate === -1 || iDesc === -1) return [];
+
+      return rows.map(r => {
+        let raw = 0;
+        if (iAmt !== -1) {
+          raw = parseFloat(r[iAmt]?.replace(/[^\d,.-]/g,'').replace(',','.')) || 0;
+        } else if (iDebit !== -1 || iCredit !== -1) {
+          const d = parseFloat(r[iDebit]?.replace(/[^\d,.-]/g,'').replace(',','.')) || 0;
+          const c = parseFloat(r[iCredit]?.replace(/[^\d,.-]/g,'').replace(',','.')) || 0;
+          raw = c > 0 ? c : -d;
+        }
+        if (raw === 0) return null;
+        return {
+          data:     parseDate(r[iDate]),
+          descricao: r[iDesc] || '–',
+          valor:    Math.abs(raw).toFixed(2),
+          tipo:     raw < 0 ? 'expense' : 'income',
+        };
+      }).filter(Boolean);
+    },
+  },
+};
+
+/**
+ * Normaliza vários formatos de data para YYYY-MM-DD.
+ * Suporta: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, DD-MM-YYYY, e com hora.
+ */
+function parseDate(str) {
+  if (!str) return new Date().toISOString().split('T')[0];
+  const s = str.trim().split(' ')[0]; // remove horas se existirem
+
+  // YYYY-MM-DD (ISO) — já está no formato certo
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // DD/MM/YYYY ou DD-MM-YYYY (formato português)
+  const ptMatch = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (ptMatch) return `${ptMatch[3]}-${ptMatch[2].padStart(2,'0')}-${ptMatch[1].padStart(2,'0')}`;
+
+  // Tenta Date.parse como último recurso
+  const d = new Date(s);
+  if (!isNaN(d)) return d.toISOString().split('T')[0];
+
+  return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Detecta qual banco gerou o CSV com base nos cabeçalhos.
+ * Percorre os parsers por ordem de especificidade.
+ */
+function detectBank(headers) {
+  const ordered = ['revolut', 'trading212', 'bancoCTT', 'activoBank', 'generic'];
+  for (const name of ordered) {
+    if (BankParsers[name].detect(headers)) return name;
+  }
+  return 'generic';
+}
+
+// ─── ESTADO DO IMPORTADOR ─────────────────────────────────────────────────────
+// Suporta múltiplos ficheiros carregados ao mesmo tempo
+
+let importState = {
+  files: [],       // Array de { name, bank, transactions[] }
+  pendingTxs: [],  // Todas as transações de todos os ficheiros, para confirmar
+};
 
 function setupCSVImport() {
   const dropZone = document.getElementById('csv-drop-zone');
@@ -818,84 +1073,191 @@ function setupCSVImport() {
   dropZone.addEventListener('drop', e => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
-    processCSVFile(e.dataTransfer.files[0]);
+    processCSVFiles([...e.dataTransfer.files]);
   });
-  fileInput.addEventListener('change', () => processCSVFile(fileInput.files[0]));
+  // Suporta múltiplos ficheiros
+  fileInput.setAttribute('multiple', true);
+  fileInput.addEventListener('change', () => processCSVFiles([...fileInput.files]));
 }
 
-function processCSVFile(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const text = e.target.result;
-    // Detectamos o separador mais comum (vírgula ou ponto e vírgula)
-    const sep = text.includes(';') ? ';' : ',';
-    const lines = text.trim().split('\n');
-    const headers = lines[0].split(sep).map(h => h.trim().replace(/"/g,''));
+/** Processa um array de ficheiros CSV (podem ser de bancos diferentes) */
+function processCSVFiles(files) {
+  if (!files.length) return;
+  importState = { files: [], pendingTxs: [] };
 
-    // Populamos os selects de mapeamento com os cabeçalhos do CSV
-    ['csv-col-date','csv-col-desc','csv-col-amount'].forEach(id => {
-      const sel = document.getElementById(id);
-      sel.innerHTML = headers.map((h,i) => `<option value="${i}">${h}</option>`).join('');
-    });
+  let processed = 0;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const result = parseCSVText(text, file.name);
+      importState.files.push(result);
+      importState.pendingTxs.push(...result.transactions.map(tx => ({ ...tx, _selected: true, _file: file.name })));
+      processed++;
+      if (processed === files.length) renderImportPreview();
+    };
+    reader.readAsText(file, 'UTF-8');
+  });
+}
 
-    csvParsedRows = lines.slice(1).map(line => line.split(sep).map(c => c.trim().replace(/"/g,'')));
+/** Parseia o texto de um CSV e devolve { name, bank, transactions[] } */
+function parseCSVText(text, filename) {
+  // Detectamos o separador
+  const firstLine = text.split('\n')[0];
+  const sep = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
 
-    // Pré-visualizamos as primeiras 5 linhas com categorização automática
-    showCSVPreview(headers);
-    document.getElementById('csv-preview').classList.remove('hidden');
-    document.getElementById('btn-import-confirm').classList.remove('hidden');
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
+  const rows = lines.slice(1).map(line => {
+    // Parser de CSV robusto que respeita aspas
+    const result = [];
+    let cur = ''; let inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === sep[0] && !inQ) { result.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    result.push(cur.trim());
+    return result;
+  }).filter(r => r.some(c => c));
+
+  const bank = detectBank(headers);
+  const transactions = BankParsers[bank].parse(headers, rows)
+    .map(tx => ({
+      ...tx,
+      id:          genId(),
+      categoria:   tx._forceCat || guessCategory(tx.descricao),
+      subcategoria:'',
+      dono:        'joint',
+      recorrente:  'false',
+      notas:       '',
+    }));
+
+  const BANK_LABELS = {
+    revolut: 'Revolut', trading212: 'Trading 212',
+    bancoCTT: 'Banco CTT', activoBank: 'Activo Bank', generic: 'Genérico',
   };
-  reader.readAsText(file, 'UTF-8');
+
+  return { name: filename, bank, bankLabel: BANK_LABELS[bank], transactions };
 }
 
-function showCSVPreview(headers) {
-  const dIdx = parseInt(document.getElementById('csv-col-date').value);
-  const descIdx = parseInt(document.getElementById('csv-col-desc').value);
-  const amtIdx  = parseInt(document.getElementById('csv-col-amount').value);
+/** Renderiza a pré-visualização de todas as transações importadas */
+function renderImportPreview() {
+  const preview = document.getElementById('csv-preview');
+  const confirmBtn = document.getElementById('btn-import-confirm');
+  preview.classList.remove('hidden');
+  confirmBtn.classList.remove('hidden');
 
-  const preview = csvParsedRows.slice(0,10).map(row => {
-    const desc = row[descIdx] || '';
-    const guessed = guessCategory(desc);
-    return txHTML({
-      id: genId(), data: row[dIdx], descricao: desc,
-      valor: Math.abs(parseFloat(row[amtIdx]?.replace(',','.')) || 0).toFixed(2),
-      tipo: (parseFloat(row[amtIdx]?.replace(',','.')) || 0) >= 0 ? 'income' : 'expense',
-      categoria: guessed, subcategoria: '', dono: 'joint', recorrente: 'false',
-    }, false);
-  }).join('');
+  // Cabeçalho: resumo dos ficheiros detetados
+  const filesHTML = importState.files.map(f =>
+    `<div class="import-file-badge">
+      <span class="import-bank-icon">${bankIcon(f.bank)}</span>
+      <strong>${f.bankLabel}</strong>
+      <span>${f.transactions.length} movimentos</span>
+    </div>`
+  ).join('');
 
-  document.getElementById('csv-rows-preview').innerHTML = preview ||
-    '<p style="color:var(--text3);padding:16px">Não foi possível ler as linhas do CSV.</p>';
+  // Selector de "quem" pagar (para atribuir o dono a todo o extrato)
+  const ownerOptions = `
+    <div class="import-owner-row">
+      <label>Atribuir estes movimentos a:</label>
+      <select id="import-owner-select">
+        <option value="joint">Conjunto (casal)</option>
+        <option value="me">${State.settings.myName}</option>
+        <option value="partner">${State.settings.partnerName}</option>
+      </select>
+      <button class="btn-secondary" id="btn-apply-owner" style="padding:6px 12px;font-size:12px">Aplicar</button>
+    </div>`;
+
+  // Lista de transações com categoria editável
+  const txsHTML = importState.pendingTxs.map((tx, idx) => `
+    <div class="import-tx-row" data-idx="${idx}">
+      <input type="checkbox" class="import-tx-check" data-idx="${idx}" ${tx._selected ? 'checked' : ''} />
+      <div class="import-tx-date">${tx.data}</div>
+      <div class="import-tx-desc" title="${tx.descricao}">${tx.descricao}</div>
+      <div class="import-tx-amount ${tx.tipo === 'expense' ? 'expense' : 'income'}">
+        ${tx.tipo === 'expense' ? '-' : '+'}${formatEur(tx.valor)}
+      </div>
+      <select class="import-tx-cat" data-idx="${idx}">
+        ${CAT_ORDER.map(k => `<option value="${k}" ${tx.categoria === k ? 'selected' : ''}>${CATEGORIES[k].icon} ${CATEGORIES[k].label}</option>`).join('')}
+      </select>
+    </div>`
+  ).join('');
+
+  document.getElementById('csv-rows-preview').innerHTML = `
+    <div class="import-files-header">${filesHTML}</div>
+    ${ownerOptions}
+    <div class="import-tx-header">
+      <span></span><span>Data</span><span>Descrição</span><span>Valor</span><span>Categoria</span>
+    </div>
+    <div class="import-tx-list">${txsHTML}</div>
+  `;
+
+  // Atualiza a seleção quando muda a checkbox
+  document.querySelectorAll('.import-tx-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      importState.pendingTxs[parseInt(cb.dataset.idx)]._selected = cb.checked;
+    });
+  });
+
+  // Quando muda a categoria, aprende a regra para o futuro
+  document.querySelectorAll('.import-tx-cat').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const idx = parseInt(sel.dataset.idx);
+      const tx = importState.pendingTxs[idx];
+      const newCat = sel.value;
+      if (newCat !== tx.categoria) {
+        importState.pendingTxs[idx].categoria = newCat;
+        saveLearnedRule(tx.descricao, newCat); // aprende para o futuro!
+        sel.style.borderColor = 'var(--gold)'; // indicador visual de que foi corrigido
+      }
+    });
+  });
+
+  // Aplicar dono a todos
+  document.getElementById('btn-apply-owner').addEventListener('click', () => {
+    const owner = document.getElementById('import-owner-select').value;
+    importState.pendingTxs.forEach(tx => tx.dono = owner);
+    toast(`✓ Movimentos atribuídos a "${ownerLabel(owner)}"`);
+  });
+
+  confirmBtn.textContent = `Importar ${importState.pendingTxs.filter(t=>t._selected).length} transações`;
+
+  // Atualiza o contador ao selecionar/desselecionar
+  document.querySelectorAll('.import-tx-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const count = importState.pendingTxs.filter(t=>t._selected).length;
+      confirmBtn.textContent = `Importar ${count} transações`;
+    });
+  });
+}
+
+function bankIcon(bank) {
+  const icons = { revolut: '💳', trading212: '📈', bancoCTT: '🏦', activoBank: '🏦', generic: '📄' };
+  return icons[bank] || '📄';
 }
 
 async function importCSV() {
-  const dIdx    = parseInt(document.getElementById('csv-col-date').value);
-  const descIdx = parseInt(document.getElementById('csv-col-desc').value);
-  const amtIdx  = parseInt(document.getElementById('csv-col-amount').value);
+  const selected = importState.pendingTxs.filter(t => t._selected);
+  if (!selected.length) { toast('⚠️ Nenhuma transação selecionada'); return; }
+
+  const btn = document.getElementById('btn-import-confirm');
+  btn.textContent = 'A importar...';
+  btn.disabled = true;
 
   let count = 0;
-  for (const row of csvParsedRows) {
-    const rawAmt = parseFloat(row[amtIdx]?.replace(',','.')) || 0;
-    if (rawAmt === 0) continue;
-
-    const tx = {
-      id:           genId(),
-      data:         row[dIdx],
-      descricao:    row[descIdx] || 'Sem descrição',
-      valor:        Math.abs(rawAmt).toFixed(2),
-      tipo:         rawAmt >= 0 ? 'income' : 'expense',
-      categoria:    guessCategory(row[descIdx] || ''),
-      subcategoria: '',
-      dono:         'joint',
-      recorrente:   'false',
-      notas:        '',
+  for (const tx of selected) {
+    const clean = {
+      id: tx.id, data: tx.data, descricao: tx.descricao,
+      valor: tx.valor, tipo: tx.tipo, categoria: tx.categoria,
+      subcategoria: tx.subcategoria || '', dono: tx.dono,
+      recorrente: 'false', notas: tx._file ? `Importado: ${tx._file}` : '',
     };
     try {
-      await Sheets.addTransaction(tx);
-      State.transactions.push(tx);
+      await Sheets.addTransaction(clean);
+      State.transactions.push(clean);
       count++;
-    } catch(e) { console.error('Erro ao importar linha:', e); }
+    } catch(e) { console.error('Erro ao importar:', e); }
   }
 
   closeModal('modal-csv');

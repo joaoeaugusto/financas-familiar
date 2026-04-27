@@ -882,6 +882,77 @@ body {
   font-size: 14px;
 }
 
+/* ── IMPORTAÇÃO ── */
+.bank-support-badges {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.bank-badge {
+  font-size: 12px; font-weight: 500;
+  background: var(--surface3); border: 1px solid var(--border2);
+  color: var(--text2); padding: 4px 10px; border-radius: 20px;
+}
+.bank-badge.muted { opacity: 0.5; }
+
+.import-files-header {
+  display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.import-file-badge {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: var(--r-sm); padding: 8px 14px;
+  font-size: 13px;
+}
+.import-file-badge strong { color: var(--text); }
+.import-file-badge span { color: var(--text3); font-size: 12px; }
+.import-bank-icon { font-size: 16px; }
+
+.import-owner-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 10px 14px; margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.import-owner-row label { font-size: 12px; color: var(--text2); font-weight: 500; white-space: nowrap; }
+.import-owner-row select {
+  background: var(--surface3); border: 1px solid var(--border2);
+  border-radius: 6px; color: var(--text); padding: 6px 10px;
+  font-size: 13px; font-family: 'Inter', sans-serif; outline: none;
+}
+
+.import-tx-header {
+  display: grid;
+  grid-template-columns: 24px 90px 1fr 100px 160px;
+  gap: 8px; padding: 6px 8px;
+  font-size: 10px; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.import-tx-list { max-height: 340px; overflow-y: auto; }
+.import-tx-row {
+  display: grid;
+  grid-template-columns: 24px 90px 1fr 100px 160px;
+  gap: 8px; align-items: center;
+  padding: 8px 8px; border-radius: 6px;
+  transition: background 0.1s;
+}
+.import-tx-row:hover { background: var(--surface2); }
+.import-tx-date { font-size: 12px; color: var(--text3); white-space: nowrap; }
+.import-tx-desc {
+  font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.import-tx-amount { font-size: 13px; font-weight: 600; text-align: right; }
+.import-tx-amount.expense { color: var(--red); }
+.import-tx-amount.income  { color: var(--green); }
+.import-tx-cat {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text2); padding: 5px 8px;
+  font-size: 12px; font-family: 'Inter', sans-serif; outline: none;
+  width: 100%; transition: border-color 0.2s;
+}
+.import-tx-cat:focus { border-color: var(--gold); }
+
 /* ── TOAST ── */
 .toast {
   position: fixed;

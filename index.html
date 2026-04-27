@@ -613,31 +613,31 @@
   <div id="modal-csv" class="modal-overlay hidden">
     <div class="modal wide">
       <div class="modal-header">
-        <h3>Importar extrato do banco (CSV)</h3>
+        <h3>📂 Importar extratos bancários</h3>
         <button class="modal-close" data-modal="modal-csv">✕</button>
       </div>
       <div class="modal-body">
-        <p class="card-desc mb-12">Exporte o extrato no seu banco online em formato CSV ou Excel e arraste aqui o ficheiro. A app vai tentar categorizar automaticamente cada transação.</p>
+        <p class="card-desc mb-8">Pode arrastar <strong>vários ficheiros de uma vez</strong> — mesmo de bancos diferentes. A app deteta automaticamente o formato de cada um.</p>
+        <div class="bank-support-badges">
+          <span class="bank-badge">💳 Revolut</span>
+          <span class="bank-badge">📈 Trading 212</span>
+          <span class="bank-badge">🏦 Banco CTT</span>
+          <span class="bank-badge muted">🏦 Activo Bank*</span>
+        </div>
+        <p class="card-desc mb-12" style="font-size:11px;color:var(--text3)">* O Activo Bank não exporta CSV. Para estes movimentos, use a inserção manual.</p>
         <div class="csv-drop-zone" id="csv-drop-zone">
           <div class="csv-drop-icon">📂</div>
-          <p>Arraste o ficheiro CSV aqui, ou clique para selecionar</p>
-          <input type="file" id="csv-file-input" accept=".csv,.xlsx,.xls" class="hidden" />
+          <p>Arraste os ficheiros CSV aqui, ou clique para selecionar</p>
+          <p style="font-size:12px;color:var(--text3);margin-top:4px">Vários ficheiros em simultâneo são suportados</p>
+          <input type="file" id="csv-file-input" accept=".csv" class="hidden" multiple />
         </div>
         <div id="csv-preview" class="hidden">
-          <div class="csv-mapping mb-12">
-            <p class="card-desc mb-8">Mapeamento de colunas (indique qual coluna do CSV corresponde a cada campo):</p>
-            <div class="form-row">
-              <div class="form-field"><label>Coluna da data</label><select id="csv-col-date"></select></div>
-              <div class="form-field"><label>Coluna da descrição</label><select id="csv-col-desc"></select></div>
-              <div class="form-field"><label>Coluna do valor</label><select id="csv-col-amount"></select></div>
-            </div>
-          </div>
-          <div id="csv-rows-preview" class="transactions-list"></div>
+          <div id="csv-rows-preview"></div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" data-modal="modal-csv">Cancelar</button>
-        <button class="btn-primary hidden" id="btn-import-confirm">Importar selecionadas</button>
+        <button class="btn-primary hidden" id="btn-import-confirm">Importar transações</button>
       </div>
     </div>
   </div>
