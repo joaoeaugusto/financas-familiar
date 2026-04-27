@@ -151,8 +151,8 @@ async function createSheet(name) {
 
   const sheetId = created.spreadsheetId;
 
-  // 2. Inicializar cabeçalhos em cada aba
-  await sheetsAPI('PUT',
+  // 2. Inicializar cabeçalhos em cada aba (batchUpdate usa POST)
+  await sheetsAPI('POST',
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchUpdate`,
     {
       valueInputOption: 'RAW',
